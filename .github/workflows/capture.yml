@@ -7,6 +7,10 @@ on:
         description: "Homepage URL to capture"
         required: true
         type: string
+      chat_id:
+        description: "Telegram chat ID that should receive the ZIP"
+        required: false
+        type: string
 
 jobs:
   capture:
@@ -14,7 +18,8 @@ jobs:
     timeout-minutes: 15
     env:
       BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-      ALLOWED_CHAT_ID: ${{ secrets.ALLOWED_CHAT_ID }}
+      DEFAULT_CHAT_ID: ${{ secrets.ALLOWED_CHAT_ID }}
+      REQUEST_CHAT_ID: ${{ inputs.chat_id }}
     steps:
       - uses: actions/checkout@v4
 
@@ -48,11 +53,17 @@ jobs:
           retention-days: 1
 
       - name: Send ZIP to Telegram
-        if: ${{ env.BOT_TOKEN != '' && env.ALLOWED_CHAT_ID != '' }}
+        if: ${{ env.BOT_TOKEN != '' }}
         shell: bash
         run: |
+          CHAT_ID="${REQUEST_CHAT_ID:-$DEFAULT_CHAT_ID}"
+          if [ -z "$CHAT_ID" ]; then
+            echo "No Telegram chat ID configured" >&2
+            exit 1
+          fi
+
           curl --fail --silent --show-error \
-            -F "chat_id=${ALLOWED_CHAT_ID}" \
+            -F "chat_id=${CHAT_ID}" \
             -F "caption=✅ Homepage design capture готовий" \
             -F "document=@${{ steps.archive.outputs.zip_path }}" \
             "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument"
