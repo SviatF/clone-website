@@ -4,11 +4,32 @@ import { promises as fs } from "node:fs";
 import { cloneHomepage } from "./cloneHomepage.js";
 
 const token = process.env.BOT_TOKEN;
+const allowedChatId = process.env.ALLOWED_CHAT_ID;
+
 if (!token) {
-  throw new Error("BOT_TOKEN is missing. Add it to .env or GitHub Actions secrets.");
+  throw new Error("BOT_TOKEN is missing. Add it to .env or deployment secrets.");
+}
+
+if (!allowedChatId) {
+  throw new Error("ALLOWED_CHAT_ID is missing. Add it to .env or deployment secrets.");
 }
 
 const bot = new Bot(token);
+
+function isAllowedChat(chatId: number | string): boolean {
+  return String(chatId) === String(allowedChatId);
+}
+
+bot.use(async (ctx, next) => {
+  if (!ctx.chat) return;
+
+  if (!isAllowedChat(ctx.chat.id)) {
+    console.warn(`Blocked Telegram chat: ${ctx.chat.id}`);
+    return;
+  }
+
+  await next();
+});
 
 bot.command("start", async (ctx) => {
   await ctx.reply(
@@ -23,7 +44,7 @@ bot.command("clone", async (ctx) => {
     return;
   }
 
-  const status = await ctx.reply("🔎 Відкриваю тільки головну сторінку та збираю дизайн-ресурси…");
+  const status = await ctx.reply("🔎 Відкриваю тільки передану сторінку та збираю дизайн-ресурси…");
 
   try {
     const result = await cloneHomepage(raw);
@@ -39,6 +60,9 @@ bot.command("clone", async (ctx) => {
     await ctx.replyWithDocument(new InputFile(result.zipPath), {
       caption: `${result.hostname} — homepage design capture`,
     });
+
+    await fs.rm(result.outputDir, { recursive: true, force: true }).catch(() => undefined);
+    await fs.rm(result.zipPath, { force: true }).catch(() => undefined);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Невідома помилка";
     await ctx.api.editMessageText(ctx.chat.id, status.message_id, `❌ Не вдалося скопіювати сторінку:\n${message.slice(0, 3500)}`);
