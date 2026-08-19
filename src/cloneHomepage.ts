@@ -41,7 +41,7 @@ async function assertPublicUrl(rawUrl: string): Promise<URL> {
   const normalized = /^https?:\/\//i.test(rawUrl.trim()) ? rawUrl.trim() : `https://${rawUrl.trim()}`;
   const url = new URL(normalized);
 
-  if (!['http:', 'https:'].includes(url.protocol)) {
+  if (!["http:", "https:"].includes(url.protocol)) {
     throw new Error("Підтримуються лише http/https URL.");
   }
 
@@ -104,7 +104,7 @@ async function saveResponseAsset(response: Response, outputDir: string, seen: Se
     return false;
   }
 
-  if (!['http:', 'https:'].includes(parsed.protocol)) return false;
+  if (!["http:", "https:"].includes(parsed.protocol)) return false;
 
   const contentType = response.headers()["content-type"] || "";
   const bucket = assetBucket(contentType);
@@ -127,78 +127,82 @@ async function saveResponseAsset(response: Response, outputDir: string, seen: Se
 }
 
 async function autoScroll(page: Page): Promise<void> {
-  await page.evaluate(async () => {
-    await new Promise<void>((resolve) => {
-      let total = 0;
-      const distance = 700;
-      const timer = setInterval(() => {
-        const height = document.documentElement.scrollHeight;
-        window.scrollBy(0, distance);
-        total += distance;
-        if (total >= height || total > 30000) {
-          clearInterval(timer);
-          window.scrollTo(0, 0);
-          resolve();
-        }
-      }, 100);
-    });
-  });
+  await page.evaluate(`
+    (async () => {
+      await new Promise((resolve) => {
+        let total = 0;
+        const distance = 700;
+        const timer = setInterval(() => {
+          const height = document.documentElement.scrollHeight;
+          window.scrollBy(0, distance);
+          total += distance;
+          if (total >= height || total > 30000) {
+            clearInterval(timer);
+            window.scrollTo(0, 0);
+            resolve();
+          }
+        }, 100);
+      });
+    })()
+  `);
 }
 
-async function extractDesign(page: Page) {
-  return page.evaluate(() => {
-    const elements = Array.from(document.querySelectorAll<HTMLElement>("body *"));
-    const colors = new Set<string>();
-    const fonts = new Set<string>();
-    const radii = new Set<string>();
+async function extractDesign(page: Page): Promise<unknown> {
+  return page.evaluate(`
+    (() => {
+      const elements = Array.from(document.querySelectorAll("body *"));
+      const colors = new Set();
+      const fonts = new Set();
+      const radii = new Set();
 
-    for (const element of elements.slice(0, 5000)) {
-      const style = getComputedStyle(element);
-      if (style.color && style.color !== "rgba(0, 0, 0, 0)") colors.add(style.color);
-      if (style.backgroundColor && style.backgroundColor !== "rgba(0, 0, 0, 0)") colors.add(style.backgroundColor);
-      if (style.fontFamily) fonts.add(style.fontFamily);
-      if (style.borderRadius && style.borderRadius !== "0px") radii.add(style.borderRadius);
-    }
+      for (const element of elements.slice(0, 5000)) {
+        const style = getComputedStyle(element);
+        if (style.color && style.color !== "rgba(0, 0, 0, 0)") colors.add(style.color);
+        if (style.backgroundColor && style.backgroundColor !== "rgba(0, 0, 0, 0)") colors.add(style.backgroundColor);
+        if (style.fontFamily) fonts.add(style.fontFamily);
+        if (style.borderRadius && style.borderRadius !== "0px") radii.add(style.borderRadius);
+      }
 
-    const rect = (el: Element) => {
-      const r = el.getBoundingClientRect();
-      return {
-        x: Math.round(r.x),
-        y: Math.round(r.y + window.scrollY),
-        width: Math.round(r.width),
-        height: Math.round(r.height),
+      const makeRect = (el) => {
+        const r = el.getBoundingClientRect();
+        return {
+          x: Math.round(r.x),
+          y: Math.round(r.y + window.scrollY),
+          width: Math.round(r.width),
+          height: Math.round(r.height)
+        };
       };
-    };
 
-    return {
-      capturedAt: new Date().toISOString(),
-      viewport: { width: window.innerWidth, height: window.innerHeight },
-      document: {
-        width: document.documentElement.scrollWidth,
-        height: document.documentElement.scrollHeight,
-        title: document.title,
-      },
-      colors: Array.from(colors).slice(0, 100),
-      fonts: Array.from(fonts).slice(0, 50),
-      borderRadii: Array.from(radii).slice(0, 50),
-      headings: Array.from(document.querySelectorAll("h1,h2,h3")).slice(0, 100).map((el) => ({
-        tag: el.tagName.toLowerCase(),
-        text: (el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 500),
-        rect: rect(el),
-      })),
-      buttons: Array.from(document.querySelectorAll("button,a[role='button'],input[type='submit']")).slice(0, 100).map((el) => ({
-        text: ((el as HTMLElement).innerText || (el as HTMLInputElement).value || "").trim().replace(/\s+/g, " ").slice(0, 300),
-        rect: rect(el),
-      })),
-      sections: Array.from(document.querySelectorAll("header,main > section,body > section,footer")).slice(0, 100).map((el, index) => ({
-        index,
-        tag: el.tagName.toLowerCase(),
-        id: el.id || null,
-        className: typeof el.className === "string" ? el.className.slice(0, 500) : null,
-        rect: rect(el),
-      })),
-    };
-  });
+      return {
+        capturedAt: new Date().toISOString(),
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+        document: {
+          width: document.documentElement.scrollWidth,
+          height: document.documentElement.scrollHeight,
+          title: document.title
+        },
+        colors: Array.from(colors).slice(0, 100),
+        fonts: Array.from(fonts).slice(0, 50),
+        borderRadii: Array.from(radii).slice(0, 50),
+        headings: Array.from(document.querySelectorAll("h1,h2,h3")).slice(0, 100).map((el) => ({
+          tag: el.tagName.toLowerCase(),
+          text: (el.textContent || "").trim().replace(/\\s+/g, " ").slice(0, 500),
+          rect: makeRect(el)
+        })),
+        buttons: Array.from(document.querySelectorAll("button,a[role='button'],input[type='submit']")).slice(0, 100).map((el) => ({
+          text: (el.innerText || el.value || "").trim().replace(/\\s+/g, " ").slice(0, 300),
+          rect: makeRect(el)
+        })),
+        sections: Array.from(document.querySelectorAll("header,main > section,body > section,footer")).slice(0, 100).map((el, index) => ({
+          index,
+          tag: el.tagName.toLowerCase(),
+          id: el.id || null,
+          className: typeof el.className === "string" ? el.className.slice(0, 500) : null,
+          rect: makeRect(el)
+        }))
+      };
+    })()
+  `);
 }
 
 async function zipDirectory(sourceDir: string, zipPath: string): Promise<void> {
@@ -250,7 +254,7 @@ export async function cloneHomepage(rawUrl: string): Promise<CloneResult> {
     const design = await extractDesign(page);
     await fs.writeFile(
       path.join(outputDir, "design.json"),
-      JSON.stringify({ sourceUrl: target.toString(), ...design }, null, 2),
+      JSON.stringify({ sourceUrl: target.toString(), ...(design as Record<string, unknown>) }, null, 2),
       "utf8",
     );
 
