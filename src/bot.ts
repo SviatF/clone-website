@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { Bot, InputFile } from "grammy";
+import { Bot, InputFile, type Context } from "grammy";
 import { promises as fs } from "node:fs";
 import { cloneHomepage } from "./cloneHomepage.js";
 
@@ -34,7 +34,9 @@ function looksLikeDomain(value: string): boolean {
   }
 }
 
-async function captureAndSend(ctx: Parameters<Parameters<typeof bot.command>[1]>[0], raw: string) {
+async function captureAndSend(ctx: Context, raw: string) {
+  if (!ctx.chat) return;
+
   if (isCapturing) {
     await ctx.reply("⏳ Зараз уже обробляється інший сайт. Дочекайся ZIP і надішли наступний домен.");
     return;
@@ -57,7 +59,7 @@ async function captureAndSend(ctx: Parameters<Parameters<typeof bot.command>[1]>
     const sizeMb = stat.size / 1024 / 1024;
 
     await ctx.api.editMessageText(
-      ctx.chat!.id,
+      ctx.chat.id,
       status.message_id,
       `✅ Готово\n\n🌐 ${result.url}\n📄 Сторінок: 1\n🎨 Assets: ${result.assetCount}\n📦 ZIP: ${sizeMb.toFixed(1)} MB\n\nНадсилаю файл…`,
     );
@@ -70,7 +72,7 @@ async function captureAndSend(ctx: Parameters<Parameters<typeof bot.command>[1]>
   } catch (error) {
     const message = error instanceof Error ? error.message : "Невідома помилка";
     await ctx.api.editMessageText(
-      ctx.chat!.id,
+      ctx.chat.id,
       status.message_id,
       `❌ Не вдалося обробити сайт:\n${message.slice(0, 3500)}\n\nНадішли домен ще раз.`,
     );
