@@ -1,0 +1,24 @@
+{
+  "name": "clone-website",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Telegram bot that captures a single homepage for design reference: rendered HTML, assets, screenshot and design metadata.",
+  "scripts": {
+    "dev": "tsx src/bot.ts",
+    "start": "tsx src/bot.ts",
+    "clone": "tsx src/cli.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "archiver": "^7.0.1",
+    "dotenv": "^16.4.5",
+    "grammy": "^1.30.0",
+    "playwright": "^1.46.1"
+  },
+  "devDependencies": {
+    "@types/archiver": "^6.0.3",
+    "@types/node": "^22.5.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4"
+  }
+}
