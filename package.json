@@ -2,6 +2,7 @@
   "name": "clone-website",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "description": "Telegram bot that captures a single homepage for design reference: rendered HTML, assets, screenshot and design metadata.",
   "scripts": {
     "dev": "tsx src/bot.ts",
