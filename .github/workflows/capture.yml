@@ -1,0 +1,59 @@
+name: capture-homepage
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Homepage URL to capture"
+        required: true
+        type: string
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+      ALLOWED_CHAT_ID: ${{ secrets.ALLOWED_CHAT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm install
+
+      - run: npx playwright install --with-deps chromium
+
+      - name: Capture homepage
+        run: npm run clone -- "${{ inputs.url }}"
+
+      - name: Find archive
+        id: archive
+        shell: bash
+        run: |
+          ZIP_PATH="$(find downloads -maxdepth 1 -type f -name '*.zip' | head -n 1)"
+          if [ -z "$ZIP_PATH" ]; then
+            echo "No ZIP archive was created" >&2
+            exit 1
+          fi
+          echo "zip_path=$ZIP_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Upload GitHub artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: homepage-design-capture
+          path: ${{ steps.archive.outputs.zip_path }}
+          retention-days: 1
+
+      - name: Send ZIP to Telegram
+        if: ${{ env.BOT_TOKEN != '' && env.ALLOWED_CHAT_ID != '' }}
+        shell: bash
+        run: |
+          curl --fail --silent --show-error \
+            -F "chat_id=${ALLOWED_CHAT_ID}" \
+            -F "caption=✅ Homepage design capture готовий" \
+            -F "document=@${{ steps.archive.outputs.zip_path }}" \
+            "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument"
