@@ -126,6 +126,55 @@ async function saveResponseAsset(response: Response, outputDir: string, seen: Se
   }
 }
 
+function navigationCandidateStrings(target: URL): string[] {
+  const bareHostname = target.hostname.replace(/^www\./i, "");
+  const hostnames = target.hostname.toLowerCase().startsWith("www.")
+    ? [target.hostname, bareHostname]
+    : [target.hostname, `www.${bareHostname}`];
+  const protocols = target.protocol === "https:" ? ["https:", "http:"] : ["http:", "https:"];
+  const candidates: string[] = [];
+
+  for (const protocol of protocols) {
+    for (const hostname of hostnames) {
+      const candidate = new URL(target.toString());
+      candidate.protocol = protocol;
+      candidate.hostname = hostname;
+      const value = candidate.toString();
+      if (!candidates.includes(value)) candidates.push(value);
+    }
+  }
+
+  return candidates;
+}
+
+async function navigateWithFallback(page: Page, target: URL): Promise<URL> {
+  const errors: string[] = [];
+
+  for (const candidateString of navigationCandidateStrings(target)) {
+    let candidate: URL;
+    try {
+      candidate = await assertPublicUrl(candidateString);
+    } catch (error) {
+      errors.push(`${candidateString}: ${error instanceof Error ? error.message : String(error)}`);
+      continue;
+    }
+
+    try {
+      console.log(`Trying navigation: ${candidate.toString()}`);
+      await page.goto(candidate.toString(), { waitUntil: "domcontentloaded", timeout: 45_000 });
+      const finalUrl = new URL(page.url());
+      console.log(`Navigation succeeded: ${finalUrl.toString()}`);
+      return finalUrl;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(`${candidate.toString()}: ${message}`);
+      console.warn(`Navigation failed: ${candidate.toString()} — ${message.split("\n")[0]}`);
+    }
+  }
+
+  throw new Error(`Не вдалося відкрити сторінку після fallback-спроб:\n${errors.join("\n")}`);
+}
+
 async function autoScroll(page: Page): Promise<void> {
   await page.evaluate(`
     (async () => {
@@ -219,8 +268,8 @@ async function zipDirectory(sourceDir: string, zipPath: string): Promise<void> {
 }
 
 export async function cloneHomepage(rawUrl: string): Promise<CloneResult> {
-  const target = await assertPublicUrl(rawUrl);
-  const hostname = target.hostname.replace(/[^a-z0-9.-]/gi, "_");
+  const requestedTarget = await assertPublicUrl(rawUrl);
+  const hostname = requestedTarget.hostname.replace(/[^a-z0-9.-]/gi, "_");
   const id = `${hostname}-${Date.now()}`;
   const outputDir = path.join(DOWNLOAD_ROOT, id);
   const zipPath = path.join(DOWNLOAD_ROOT, `${id}.zip`);
@@ -243,7 +292,7 @@ export async function cloneHomepage(rawUrl: string): Promise<CloneResult> {
   });
 
   try {
-    await page.goto(target.toString(), { waitUntil: "domcontentloaded", timeout: 45_000 });
+    const actualTarget = await navigateWithFallback(page, requestedTarget);
     await page.waitForLoadState("networkidle", { timeout: 12_000 }).catch(() => undefined);
     await autoScroll(page);
     await page.waitForTimeout(1200);
@@ -254,7 +303,15 @@ export async function cloneHomepage(rawUrl: string): Promise<CloneResult> {
     const design = await extractDesign(page);
     await fs.writeFile(
       path.join(outputDir, "design.json"),
-      JSON.stringify({ sourceUrl: target.toString(), ...(design as Record<string, unknown>) }, null, 2),
+      JSON.stringify(
+        {
+          requestedUrl: requestedTarget.toString(),
+          sourceUrl: actualTarget.toString(),
+          ...(design as Record<string, unknown>),
+        },
+        null,
+        2,
+      ),
       "utf8",
     );
 
@@ -264,14 +321,14 @@ export async function cloneHomepage(rawUrl: string): Promise<CloneResult> {
 
     await fs.writeFile(
       path.join(outputDir, "README.txt"),
-      `Source: ${target.toString()}\nMode: single-page capture only\nAssets captured from network requests made while rendering this page.\n`,
+      `Requested: ${requestedTarget.toString()}\nCaptured: ${actualTarget.toString()}\nMode: single-page capture only\nAssets captured from network requests made while rendering this page.\n`,
       "utf8",
     );
 
     await zipDirectory(outputDir, zipPath);
 
     return {
-      url: target.toString(),
+      url: actualTarget.toString(),
       hostname,
       outputDir,
       zipPath,
